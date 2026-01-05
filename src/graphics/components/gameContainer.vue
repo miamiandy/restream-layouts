@@ -1,6 +1,6 @@
 <template>
     <div>
-        <div v-if="gameMode.game === 'sms' || gameMode.game === 'sa2b'" class="GameContainer FlexContainer">
+        <div v-if="gameMode.game === 'sa2b'" class="GameContainer FlexContainer">
             <div class="GameName FlexContainer">Bingo League</div>
             <div class="GameExtra FlexContainer">{{ gameCategory }}</div>
         </div>

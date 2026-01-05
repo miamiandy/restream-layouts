@@ -89,34 +89,35 @@
         top: 720px;
         left: 0px;
         border: 2px var(--container-border-color) solid;
-        width: 715px;
+        width: 665px;
     }
 
     #pi2 {
         position: absolute;
         top: 720px;
-        left: 1190px;
+        left: 1240px;
         border: 2px var(--container-border-color) solid;
-        width: 715px;
+        width: 665px;
     }
 
     #Bingo-board {
         position: absolute;
-        top: 720px;
-        left: 730px;
+        top: 625px;
+        left: 680px;
+        opacity: 0.85;
         border: 2px var(--container-border-color) solid;
-        width: 460px;
-        height: 360px;
+        width: 560px;
+        height: 455px;
     }
 
     #gameSMS {
         background-image: url('../../../static/background-sunshine.jpg');
-        background-size: cover;
+        c: cover;
         background-repeat: no-repeat;
         position: absolute;
         top: 780px;
         left: 0px;
-        width: 730px;
+        width: 680px;
         border: 2px var(--container-border-color) solid;
         height: 300px;
     }
@@ -136,8 +137,8 @@
     #gamecSMS {
         position: absolute;
         top: 200px;
-        left: 0px;
-        width: 730px;
+        left: 0px/*post shift 332px*/;
+        width: 680px/*post shift 332px*/;
     }
 
     #gamec {
@@ -151,22 +152,22 @@
         position: absolute;
         height: 150px;
         top: 25px;
-        left: 250px;
+        left: 233px /*post shift 385px*/ ;
     }
 
     #timer {
         position: absolute;
         top: 0px;
-        left: 300px;
+        left: 250px;
         width: 440px;
         height: 300px;
     }
 
     #timer-and-discord-container {
         position: absolute;
-        left: 1190px;
+        left: 1240px;
         top: 780px;
-        width: 730px;
+        width: 680px;
         height: 300px;
         border: 2px var(--container-border-color) solid;
     }
