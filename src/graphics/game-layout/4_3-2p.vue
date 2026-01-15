@@ -137,8 +137,8 @@
     #gamecSMS {
         position: absolute;
         top: 200px;
-        left: 0px/*post shift 332px*/;
-        width: 680px/*post shift 332px*/;
+        left: 332px/*pre shift 0*/;
+        width: 332px/*pre shift 680px*/;
     }
 
     #gamec {
@@ -152,7 +152,7 @@
         position: absolute;
         height: 150px;
         top: 25px;
-        left: 233px /*post shift 385px*/ ;
+        left: 388px /*post shift 233px*/ ;
     }
 
     #timer {
