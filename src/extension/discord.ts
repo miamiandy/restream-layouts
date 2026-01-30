@@ -1,15 +1,14 @@
-// source: https://github.com/TreZc0/kiio-podcast
-
-// TODO refactor this
 /* eslint-disable @typescript-eslint/no-use-before-define, no-inner-declarations */
 
 // Imports
-import * as Discord from 'discord.js';
 import * as Voice from '@discordjs/voice';
 import * as nodecgApiContext from './util/nodecg-api-context';
+import { Client, GatewayIntentBits, ChannelType, Message, VoiceBasedChannel } from 'discord.js';
 import { VoiceActivity, GameMode } from '@/schemas';
 import { Configschema } from '@/configschema';
 import { getVoiceConnection, VoiceConnection } from '@discordjs/voice';
+
+type VoiceActivityMember = VoiceActivity['members'][0];
 
 const nodecg = nodecgApiContext.get();
 
@@ -30,7 +29,16 @@ if (!voiceDelayRep.value) {
 }
 
 // Discord API
-const bot = new Discord.Client({ intents: 32767 }); // all intents cause I'm too lazy to figure out which are the correct ones
+const bot = new Client({
+	intents:
+		[
+			GatewayIntentBits.Guilds,
+			GatewayIntentBits.GuildMembers,
+			GatewayIntentBits.GuildMessages,
+			GatewayIntentBits.GuildVoiceStates,
+			GatewayIntentBits.MessageContent
+		]
+});
 
 // enum is needed otherwise ts will complain about the keys
 enum discordConfigKeys {
@@ -60,11 +68,11 @@ if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChanne
 } else {
     // Variables
     let voiceStatus: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
-    
+
     let voiceConnection: VoiceConnection | undefined;
-    
+
     // Connection
-    bot.on('ready', (): void => {
+    bot.on('clientReady', (): void => {
         if (!bot.user) {
             log.error('bot user not set!!');
             return;
@@ -74,28 +82,32 @@ if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChanne
         log.info('Command Channel ID: ', botCommandChannelID);
         log.info('Voice Channel ID: ', botVoiceCommentaryChannelID);
     });
-    bot.on('error', (): void => {
+    bot.on('error', async (): Promise<void> => {
         log.error('The bot encountered a connection error!!');
-        
+
         voiceStatus = 'error';
-        
-        setTimeout((): void => {
-            bot.login(botToken);
+
+        setTimeout(async (): Promise<void> => {
+            await bot.login(botToken);
         }, 10000);
     });
-    
-    bot.on('disconnect', (): void => {
+
+    bot.on('disconnect', async (): Promise<void> => {
         log.error('The bot disconnected!!');
-        
-        voiceStatus = 'disconnected';
-        
-        setTimeout((): void => {
-            bot.login(botToken);
+
+		// if disconnected on purpose, don't reconnect'
+        if (voiceStatus === 'disconnected') {
+			return;
+		}
+
+		// if the bot got kicked, try to reconnect
+        setTimeout(async (): Promise<void> => {
+            await bot.login(botToken);
         }, 10000);
     });
-    
+
     bot.login(botToken);
-    
+
     // Voice
     bot.on('voiceStateUpdate', (): void => {
         updateCommentaryChannelMembers();
@@ -104,7 +116,7 @@ if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChanne
             joinVC();
         }
     });
-    
+
     gameModeRep.on('change', (newVal, oldVal) => {
         if (newVal && oldVal && newVal.game === oldVal.game) {
             return;
@@ -112,124 +124,112 @@ if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChanne
         if (bot.isReady())
             updateDiscordConfig();
     });
-    
+
     function updateDiscordConfig(): void {
         // leave old channel
         try {
             getVoiceConnection(botServerID)?.disconnect();
+			getVoiceConnection(botServerID)?.destroy();
         } catch (err) {
             console.log('Bot not connected');
         }
         voiceStatus = 'disconnected';
-        
+
         // new config
         botServerID = config[gameModeToConfigKey[gameModeRep.value.game]]?.serverID || '';
         botCommandChannelID = config[gameModeToConfigKey[gameModeRep.value.game]]?.commandChannelID || '';
         botVoiceCommentaryChannelID = config[gameModeToConfigKey[gameModeRep.value.game]]?.voiceChannelID || '';
-        
+
         if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChannelID)) {
             log.error('botToken, botServerID, botCommandChannelID, botVoiceCommentaryChannelID all have to be set!');
             return;
         }
-        
+
         joinVC();
-        
+
     }
-    
+
     function updateCommentaryChannelMembers(): void {
         if (!voiceActivity || !voiceActivity.value) return;
-        
+
         if (bot.isReady()) {
-            
+
             const memberCollection = getVoiceChannelSafe(botServerID, botVoiceCommentaryChannelID)
                 .members;
-            
+
             if (!memberCollection || memberCollection.size < 1) {
                 voiceActivity.value.members = [];
                 return;
             }
-            
-            const newVoiceArray: {
-                id: string;
-                name: string;
-                avatar: string;
-                isSpeaking: boolean;
-            }[] = [];
-            
-            memberCollection.forEach((voiceMember): void => {
+
+			// flatMap is used to filter out members that are muted or ignored
+			voiceActivity.value.members = Array.from(memberCollection.values()).flatMap((voiceMember): VoiceActivityMember[] => {
                 // Hide our bot and muted members cause that is the restreamer
                 if (config.discord?.ignoredUsers
                     && config.discord.ignoredUsers.includes(voiceMember.user.tag)) {
-                    return;
+                    return [];
                 }
                 if (!voiceMember.voice.mute) {
-                    let userAvatar = voiceMember.displayAvatarURL();
-                    
-                    if (!userAvatar) {
-                        userAvatar = 'https://discordapp.com/assets/dd4dbc0016779df1378e7812eabaa04d.png';
-                    } // Default avatar
-                    
+                    const userAvatar = voiceMember.displayAvatarURL()
+						// Default avatar
+						?? 'https://discordapp.com/assets/dd4dbc0016779df1378e7812eabaa04d.png'
+
                     let speakStatus = getVoiceConnection(botServerID)?.receiver.speaking.users.has(voiceMember.id);
-                    
+
                     if (!speakStatus) {
                         speakStatus = false;
                     }
-                    log.info(`${voiceMember.displayName} has changed their speaking status: ${speakStatus}`);
-                    newVoiceArray.push({
+
+                    return [{
                         id: voiceMember.id,
                         name: voiceMember.displayName,
                         avatar: userAvatar,
                         isSpeaking: speakStatus
-                    });
+                    }];
                 }
+				return [];
             });
-            
-            voiceActivity.value.members = newVoiceArray;
-            
         }
     }
-    
+
     function joinVC(): void {
         voiceStatus = 'connecting';
-        
+
         const guild = bot.guilds.cache.get(botServerID);
-        
+
         if (guild && bot.isReady()) {
-            
+
             const joinConfig = {
                 guildId: botServerID,
                 channelId: botVoiceCommentaryChannelID,
                 selfMute: false,
                 selfDeaf: false,
-                group: '',
                 adapterCreator: guild.voiceAdapterCreator
             };
-            
-            // @ts-expect-error Currently voice is built in mind with API v10 whereas discord.js v13 uses API v9. adapters are incompatible
+
             Voice.joinVoiceChannel(joinConfig);
-            
+
             voiceStatus = 'connected';
             voiceConnection = getVoiceConnection(botServerID);
-            
+
             if (voiceConnection) {
                 voiceConnection.receiver.speaking.on('start', () => {
                     nodecg.log.info('User started speaking');
                     updateCommentaryChannelMembers();
                 });
-                
+
                 voiceConnection.receiver.speaking.on('end', () => {
                     nodecg.log.info('User stopped speaking');
                     updateCommentaryChannelMembers();
                 });
             }
-            
+
             updateCommentaryChannelMembers();
             nodecg.log.info('joined voice channel!');
-            
+
             let connection = voiceConnection;
-            
+
             if (!connection) {
-                // @ts-expect-error Currently voice is built in mind with API v10 whereas discord.js v13 uses API v9.
                 connection = Voice.joinVoiceChannel(joinConfig);
             }
             const receiver = connection.receiver;
@@ -247,7 +247,7 @@ if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChanne
                     }
                 }, voiceDelayRep.value);
             });
-            
+
             receiver.speaking.on('end', (userID => {
                 setTimeout((): void => {
                     const member = voiceActivity.value.members.find((voiceMember) => {
@@ -260,16 +260,16 @@ if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChanne
             }));
         }
     }
-    
+
     // Commands
-    function commandChannel(message: Discord.Message): void {
+    function commandChannel(message: Message): void {
         // ADMIN COMMANDS
         const command = message.content.toLowerCase();
         switch (command) {
             case '!commands':
                 message.reply('ADMIN: [!bot join | !bot leave]');
                 return;
-            
+
             case '!bot join':
                 log.info('Received Join command');
                 if (voiceStatus !== 'disconnected') {
@@ -278,7 +278,7 @@ if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChanne
                 }
                 joinVC();
                 return;
-            
+
             case '!bot leave':
                 if (voiceStatus !== 'connected') {
                     message.reply('I\'m not in the podcast channel!');
@@ -288,16 +288,16 @@ if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChanne
                 getVoiceConnection(botServerID)?.destroy();
                 voiceStatus = 'disconnected';
                 return;
-            
+
             default:
                 return;
         }
     }
-    
+
     // Message Handling
-    bot.on('messageCreate', (message: Discord.Message): void => {
+    bot.on('messageCreate', (message: Message): void => {
         if (message.channelId === botCommandChannelID) {
-            if (message.content.toLowerCase() === '!status') {
+			if (message.content.toLowerCase() === '!status') {
                 switch (voiceStatus) {
                     case 'disconnected':
                         message.reply('I\'m not in the podcast channel!');
@@ -315,9 +315,9 @@ if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChanne
             commandChannel(message);
         }
     });
-    
+
     // helper
-    function getVoiceChannelSafe(serverID: string, voiceChannelID: string): Discord.VoiceChannel {
+    function getVoiceChannelSafe(serverID: string, voiceChannelID: string): VoiceBasedChannel {
         const guild = bot.guilds.cache.get(serverID);
         if (guild === undefined) {
             throw new Error('Discord Guild-ID is invalid! Was ' + serverID);
@@ -326,9 +326,9 @@ if (!(botToken && botServerID && botCommandChannelID && botVoiceCommentaryChanne
         if (channel === undefined) {
             throw new Error('Discord Voice channel ID is invalid!');
         }
-        if (!(channel instanceof Discord.VoiceChannel)) {
+        if (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice) {
             throw new Error('Discord Channel is not a voice channel!');
         }
-        return channel as Discord.VoiceChannel;
+        return channel as VoiceBasedChannel;
     }
 }
